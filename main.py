@@ -6,14 +6,11 @@ from datetime import datetime, timedelta
 
 import flet as ft
 
-# 현재 경로 추가
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from repository.duckdb.fridge import FridgeRepository
 
 
 def main(page: ft.Page):
-    # (나머지 코드 생략 - 이 아래부터는 기존 코드와 동일합니다)
-    # ...
     page.title = "Jachi Fridge Planner"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
