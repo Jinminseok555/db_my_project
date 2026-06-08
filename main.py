@@ -8,6 +8,24 @@ import flet as ft
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from repository.duckdb.fridge import FridgeRepository
+from repository.duckdb.fridge_inventory import InventoryRepository
+from repository.duckdb.recipe import RecipeRepository
+from repository.duckdb.recipe_matching import RecipeMatcherRepository
+# 필요하다면 IngredientRepository도 추가
+
+import duckdb
+
+files = ["jachi.db", "test_jachi.db"]
+
+for db_file in files:
+    try:
+        con = duckdb.connect("jachi.db")
+        tables = con.execute("SHOW TABLES").fetchall()
+        print(f"--- 파일: {db_file} ---")
+        print(f"테이블 목록: {tables}")
+    except Exception as e:
+        print(f"--- 파일: {db_file} ---")
+        print(f"열 수 없음: {e}")
 
 
 def main(page: ft.Page):
@@ -60,10 +78,12 @@ def main(page: ft.Page):
         page.update()
 
     # --- 페이지 화면 함수들 ---
-    def show_fridge(e):
+    def show_fridge(e=None):
         df = FridgeRepository().get_all()
         today = datetime.now()
         seven_days_later = today + timedelta(days=7)
+
+        # 1. 유통기한 로직 (기존 유지)
         expiring_items = [
             r
             for _, r in df.iterrows()
@@ -72,6 +92,24 @@ def main(page: ft.Page):
             <= seven_days_later
         ]
 
+        # 2. 클릭 가능한 행(row)을 만드는 함수 (내부에 선언하여 사용)
+        def create_clickable_row(item):
+            # 상세창을 띄우는 함수를 람다로 연결
+            on_tap_func = lambda e: show_detail_dialog(page, item["id"], show_fridge)
+            return ft.DataRow(
+                cells=[
+                    ft.DataCell(ft.Text(str(item["id"])), on_tap=on_tap_func),
+                    ft.DataCell(ft.Text(item["name"]), on_tap=on_tap_func),
+                    ft.DataCell(ft.Text(str(item["qty"])), on_tap=on_tap_func),
+                    ft.DataCell(ft.Text(str(item["date"])), on_tap=on_tap_func),
+                ]
+            )
+
+        # 3. 데이터프레임의 각 행을 클릭 가능한 row로 변환
+        # (r.to_dict()를 통해 데이터를 딕셔너리로 넘겨줍니다)
+        rows = [create_clickable_row(r.to_dict()) for _, r in df.iterrows()]
+
+        # 4. 화면 구성 (DataTable에 위에서 만든 rows를 전달)
         content_area.content = ft.Column(
             [
                 ft.Row(
@@ -106,19 +144,92 @@ def main(page: ft.Page):
                         ft.DataColumn(ft.Text(c))
                         for c in ["ID", "식재료", "수량", "유통기한"]
                     ],
-                    rows=[
-                        ft.DataRow(
-                            cells=[
-                                ft.DataCell(ft.Text(str(r[col])))
-                                for col in ["id", "name", "qty", "date"]
-                            ]
-                        )
-                        for _, r in df.iterrows()
-                    ],
+                    rows=rows,  # 여기서 드디어 완성된 클릭 가능한 행들을 사용합니다!
                 ),
             ],
             scroll=ft.ScrollMode.AUTO,
         )
+        page.update()
+
+    # 테이블 행 생성 예시
+    def create_table_row(page, item, refresh_callback):
+        return ft.DataRow(
+            cells=[
+                ft.DataCell(ft.Text(str(item["id"]))),
+                ft.DataCell(ft.Text(item["name"])),
+                ft.DataCell(ft.Text(str(item["qty"]))),
+                ft.DataCell(ft.Text(str(item["expiry_date"]))),
+            ],
+            # 핵심! 행 전체를 클릭 가능하게 만들고 상세창 띄우기
+            on_select_changed=lambda e: show_detail_dialog(
+                page, item["id"], refresh_callback
+            ),
+        )
+
+        # main.py - 리스트 생성 부분
+        def create_fridge_list_item(page, item, refresh_callback):
+            return ft.ListTile(
+                title=ft.Text(
+                    item["name"], weight=ft.FontWeight.BOLD
+                ),  # 텍스트 클릭 가능
+                subtitle=ft.Text(f"수량: {item['qty']}"),
+                # 이름을 클릭하면 팝업 오픈!
+                on_click=lambda e: show_detail_dialog(
+                    page, item["id"], refresh_callback
+                ),
+            )
+
+    # --- 1.1 상세 페이지 화면 함수들 ---
+    # main.py
+
+    def show_detail_dialog(page, item_id, refresh_callback):
+        repo = InventoryRepository()
+        detail = repo.get_item_detail(
+            item_id
+        )  # (이름, 카테고리, 수량, 유통기한, 보관방법)
+
+        # 수량을 수정할 입력창
+        qty_field = ft.TextField(label="수량 수정", value=str(detail[2]), width=100)
+
+        def on_update_click(e):
+            repo.update_qty(item_id, qty_field.value)
+            dlg.open = False
+            refresh_callback()  # 메인 화면의 리스트를 새로고침하는 함수
+            page.update()
+
+        def on_delete_click(e):
+            repo.delete_item(item_id)
+            dlg.open = False
+            refresh_callback()
+            page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(f"재료 상세: {detail[0]}"),
+            content=ft.Column(
+                [
+                    ft.Text(f"카테고리: {detail[1]}"),
+                    ft.Text(f"보관 방법: {detail[4]}"),  # 여기서 보관 방법 표시!
+                    ft.Text(f"유통기한: {detail[3]}"),
+                    qty_field,
+                ],
+                tight=True,
+            ),
+            actions=[
+                ft.TextButton("수정", on_click=on_update_click),
+                ft.TextButton(
+                    "삭제",
+                    on_click=on_delete_click,
+                    icon=ft.icons.DELETE,
+                    icon_color="red",
+                ),
+                ft.TextButton(
+                    "닫기",
+                    on_click=lambda e: (setattr(dlg, "open", False), page.update()),
+                ),
+            ],
+        )
+        page.dialog = dlg
+        dlg.open = True
         page.update()
 
     # 2. 레시피 조회 화면

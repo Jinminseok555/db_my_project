@@ -8,7 +8,7 @@ class FridgeRepository:
         self._init_table()
 
     def _init_table(self):
-        with duckdb.connect(self.db_path) as con:
+        with duckdb.connect("jachi.db") as con:
             # 1. 엔티티 1: 식재료 정보
             con.execute(
                 "CREATE TABLE IF NOT EXISTS ingredients (id INTEGER PRIMARY KEY, name VARCHAR)"
@@ -41,5 +41,5 @@ class FridgeRepository:
             FROM fridge_inventory f
             JOIN ingredients i ON f.ingredient_id = i.id
         """
-        with duckdb.connect(self.db_path) as con:
+        with duckdb.connect("jachi.db") as con:
             return con.execute(query).df()
