@@ -1,27 +1,24 @@
-import pandas as pd
 import duckdb
-from repository.interfaces import IRecipeRepository
+from repository.base import BaseRepository
 
 
-class RecipeRepository(IRecipeRepository):
-    def __init__(self, db_manager):
-        self.db_manager = db_manager
+class RecipeRepository(BaseRepository):
+    def __init__(self, db_path="jachi.db"):
+        self.db_path = db_path
+        self._init_table()
 
-    def get_recipe_by_id(self, recipe_id: int) -> dict:
-        """특정 레시피 상세 정보 조회"""
-        query = "SELECT * FROM easy_cook_books WHERE recipe_id = ?"
-        result = self.db_manager.fetch_all(query, (recipe_id,))
-        return result.iloc[0].to_dict() if not result.empty else {}
+    def _init_table(self):
+        with duckdb.connect(self.db_path) as con:
+            con.execute("""CREATE TABLE IF NOT EXISTS recipes (
+                id INTEGER PRIMARY KEY, name VARCHAR, time INTEGER, difficulty VARCHAR, ingredients VARCHAR)""")
+            # 초기 데이터 추가
+            con.execute(
+                "INSERT OR REPLACE INTO recipes VALUES (1, '스팸김치볶음밥', 10, '하', '스팸,김치')"
+            )
+            con.execute(
+                "INSERT OR REPLACE INTO recipes VALUES (2, '알리오올리오', 12, '중', '마늘,올리브유')"
+            )
 
-    def get_recipes_by_filter(self, cooking_time: int, difficulty: str) -> pd.DataFrame:
-        """조건(시간, 난이도)에 따른 레시피 필터링 조회"""
-        query = """
-        SELECT * FROM easy_cook_books 
-        WHERE cooking_time <= ? AND difficulty = ?
-        """
-        return self.db_manager.fetch_all(query, (cooking_time, difficulty))
-
-    def get_all_recipes(self) -> pd.DataFrame:
-        """모든 레시피 목록 조회"""
-        query = "SELECT * FROM easy_cook_books"
-        return self.db_manager.fetch_all(query)
+    def get_all(self):
+        with duckdb.connect(self.db_path) as con:
+            return con.execute("SELECT * FROM recipes").df()

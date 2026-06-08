@@ -1,41 +1,25 @@
-import pandas as pd
 import duckdb
-from repository.interfaces import IFridgeRepository
+from repository.base import BaseRepository
 
 
-class FridgeRepository(IFridgeRepository):
-    def __init__(self, db_manager):
-        self.db_manager = db_manager
+class FridgeRepository(BaseRepository):
+    def __init__(self, db_path="jachi.db"):
+        self.db_path = db_path
+        self._init_table()
 
-    def add_item(self, item_data: dict):
-        """냉장고에 식재료 추가"""
-        query = """
-        INSERT INTO fresh_jachi_fridge (item_name, quantity_val, unit, expiration_date)
-        VALUES (?, ?, ?, ?)
-        """
-        self.db_manager.execute(
-            query,
-            (
-                item_data["item_name"],
-                item_data["quantity_val"],
-                item_data["unit"],
-                item_data["expiration_date"],
-            ),
-        )
+    def _init_table(self):
+        with duckdb.connect(self.db_path) as con:
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS fridge (id INTEGER PRIMARY KEY, name VARCHAR, qty INTEGER, unit VARCHAR, date VARCHAR)"
+            )
+            # 초기 데이터 추가
+            con.execute(
+                "INSERT OR REPLACE INTO fridge VALUES (1, '양파', 1, '개', '2026-06-10')"
+            )
+            con.execute(
+                "INSERT OR REPLACE INTO fridge VALUES (2, '스팸', 2, '개', '2026-08-15')"
+            )
 
-    def get_all_items(self) -> pd.DataFrame:
-        """냉장고 전체 식재료 목록 조회"""
-        query = "SELECT * FROM fresh_jachi_fridge ORDER BY expiration_date ASC"
-        return self.db_manager.fetch_all(query)
-
-    def update_quantity(self, fridge_item_id: int, new_quantity: int):
-        """식재료 수량 갱신 (해먹기 완료 후 호출)"""
-        query = (
-            "UPDATE fresh_jachi_fridge SET quantity_val = ? WHERE fridge_item_id = ?"
-        )
-        self.db_manager.execute(query, (new_quantity, fridge_item_id))
-
-    def delete_item(self, fridge_item_id: int):
-        """식재료 삭제 (소진 시)"""
-        query = "DELETE FROM fresh_jachi_fridge WHERE fridge_item_id = ?"
-        self.db_manager.execute(query, (fridge_item_id,))
+    def get_all(self):
+        with duckdb.connect(self.db_path) as con:
+            return con.execute("SELECT * FROM fridge").df()
